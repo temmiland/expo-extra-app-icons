@@ -59,7 +59,7 @@ Add the plugin to your `app.json` under the `plugins` array:
 ]
 ```
 
-> 💡 **Tip:** The first icon in your list should be your main app icon (`isMainIcon: true`).
+> 💡 **Tip:** The plugin fully manages your app icon, so make sure you set one with (`isMainIcon: true`).
 
 ### 3. Prebuild the project
 
@@ -76,7 +76,14 @@ bunx expo run:android
 
 ## Usage
 
-TODO – Add instructions on how to programmatically switch icons.
+```ts
+import { setAppIcon, getAppIcon } from '@temmiland/expo-extra-app-icons';
+
+const [currentIcon, setCurrentIcon] = useState(getAppIcon());
+
+setAppIcon(props.iconName);
+setCurrentIcon(props.iconName);
+```
 
 ## Support
 

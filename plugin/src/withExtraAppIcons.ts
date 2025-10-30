@@ -11,6 +11,7 @@ import {
 import { generateImageAsync } from "@expo/image-utils";
 import fs from "fs";
 import path from "path";
+import sharp from "sharp";
 // @ts-ignore
 
 const { getMainApplicationOrThrow, getMainActivityOrThrow } =
@@ -32,8 +33,9 @@ type Platform = "ios" | "android";
 
 type Icon = {
   name: string;
-  isMainIcon?: boolean;
+  isMainIcon: boolean;
   androidForeground: string;
+  androidBackground: string;
   androidMonochrome: string;
   iosIconFile: string;
   platforms: Platform[];
@@ -63,12 +65,12 @@ const withExtraAppIcons: ConfigPlugin<PluginSettings> = (
     });
   }
 
-  //const androidIcons = findIconsForPlatform(prepped, "android");
-  //const androidIconsLength = Object.keys(androidIcons).length;
-  //if (androidIconsLength > 0) {
-  //  config = withIconAndroidManifest(config, { icons: androidIcons });
-  //  config = withIconAndroidImages(config, { icons: androidIcons });
-  //}
+  const androidIcons = findIconsForPlatform(icons, "android");
+
+  if (androidIcons.length > 0) {
+    config = withIconAndroidManifest(config, { expoExtraAppIconsPath, icons: androidIcons });
+    config = withIconAndroidImages(config, { expoExtraAppIconsPath, icons: androidIcons });
+  }
   return config;
 };
 
@@ -76,52 +78,57 @@ const findIconsForPlatform = (icons: Icon[], platform: Platform) => {
   return icons.filter((icon) => icon.platforms.includes(platform));
 };
 
-// for aos
-const withIconAndroidManifest: ConfigPlugin<PluginSettings> = (
-  config,
-  { icons },
-) => {
+// for android
+const withIconAndroidManifest: ConfigPlugin<PluginSettings> = (config, props) => {
   return withAndroidManifest(config, (config) => {
     const mainApplication: any = getMainApplicationOrThrow(config.modResults);
     const mainActivity = getMainActivityOrThrow(config.modResults);
 
     const iconNamePrefix = `${config.android!.package}.MainActivity`;
-    const iconNames = Object.keys(icons);
+
+    const mainIcon = props.icons.find((icon) => icon.isMainIcon);
+    if (!mainIcon) throw new Error("No main icon defined in icons array.");
 
     function addIconActivityAlias(config: any[]): any[] {
       return [
         ...config,
-        ...iconNames.map((iconName) => ({
-          $: {
-            "android:name": `${iconNamePrefix}${iconName}`,
-            "android:enabled": "false",
-            "android:exported": "true",
-            "android:icon": `@mipmap/${iconName}`,
-            "android:targetActivity": ".MainActivity",
-          },
-          "intent-filter": [
-            ...(mainActivity["intent-filter"] || [
-              {
-                action: [
-                  { $: { "android:name": "android.intent.action.MAIN" } },
-                ],
-                category: [
-                  { $: { "android:name": "android.intent.category.LAUNCHER" } },
-                ],
-              },
-            ]),
-          ],
-        })),
+        ...props.icons.map((icon) => {
+          const isMain = icon.isMainIcon === true;
+          return {
+            $: {
+              "android:name": `${iconNamePrefix}${icon.name}`,
+              "android:enabled": isMain ? "true" : "false",
+              "android:exported": "true",
+              "android:icon": `@mipmap/${icon.name}`,
+              "android:targetActivity": ".MainActivity",
+            },
+            "intent-filter": [
+              ...(mainActivity["intent-filter"] || [
+                {
+                  action: [
+                    { $: { "android:name": "android.intent.action.MAIN" } },
+                  ],
+                  category: [
+                    { $: { "android:name": "android.intent.category.LAUNCHER" } },
+                  ],
+                },
+              ]),
+            ],
+          };
+        }),
       ];
     }
+
     function removeIconActivityAlias(config: any[]): any[] {
       return config.filter(
         (activityAlias) =>
-          !(activityAlias.$["android:name"] as string).startsWith(
-            iconNamePrefix,
-          ),
+          !(activityAlias.$["android:name"] as string).startsWith(iconNamePrefix),
       );
     }
+
+    delete mainActivity["intent-filter"];
+    mainActivity.$["android:enabled"] = "true";
+    mainActivity.$["android:exported"] = "true";
 
     mainApplication["activity-alias"] = removeIconActivityAlias(
       mainApplication["activity-alias"] || [],
@@ -130,14 +137,30 @@ const withIconAndroidManifest: ConfigPlugin<PluginSettings> = (
       mainApplication["activity-alias"] || [],
     );
 
+    const iconData = props.icons.map(icon => ({
+      name: icon.name,
+      isMainIcon: !!icon.isMainIcon,
+    }));
+
+    if (!mainApplication["meta-data"]) mainApplication["meta-data"] = [];
+
+    mainApplication["meta-data"] = mainApplication["meta-data"].filter(
+      (entry: { $: { [x: string]: string; }; }) => entry.$["android:name"] !== "expo.extra_app_icons"
+    );
+
+    mainApplication["meta-data"].push({
+      $: {
+        "android:name": "expo.extra_app_icons",
+        "android:value": JSON.stringify(iconData),
+      },
+    });
+
     return config;
   });
 };
 
-const withIconAndroidImages: ConfigPlugin<PluginSettings> = (
-  config,
-  { icons },
-) => {
+
+const withIconAndroidImages: ConfigPlugin<PluginSettings> = (config, props) => {
   return withDangerousMod(config, [
     "android",
     async (config) => {
@@ -147,102 +170,115 @@ const withIconAndroidImages: ConfigPlugin<PluginSettings> = (
       );
 
       const removeIconRes = async () => {
-        for (let i = 0; androidFolderNames.length > i; i += 1) {
-          const folder = path.join(androidResPath, androidFolderNames[i]);
-
+        for (const folderName of androidFolderNames) {
+          const folder = path.join(androidResPath, folderName);
           const files = await fs.promises.readdir(folder).catch(() => []);
-          for (let j = 0; files.length > j; j += 1) {
-            if (!files[j].startsWith("ic_launcher")) {
-              await fs.promises
-                .rm(path.join(folder, files[j]), { force: true })
-                .catch(() => null);
+          for (const file of files) {
+            if (!file.startsWith("ic_launcher")) {
+              await fs.promises.rm(path.join(folder, file), { force: true }).catch(() => null);
             }
           }
         }
       };
+
       const addIconRes = async () => {
-        for (let i = 0; androidFolderNames.length > i; i += 1) {
+        for (let i = 0; i < androidFolderNames.length; i++) {
           const size = androidSize[i];
           const outputPath = path.join(androidResPath, androidFolderNames[i]);
-          for (const [
-            name,
-            { androidForeground, androidMonochrome },
-          ] of Object.entries(icons)) {
-            const generateAndSaveImage = async (
-              name: string,
-              src: string,
-              removeTransparency?: boolean,
-            ) => {
+
+          for (const icon of props.icons) {
+            const { name, androidForeground, androidBackground, androidMonochrome } = icon;
+
+            const baseName = `${name}-${size}`;
+
+            const loadImage = async (src: string) => {
               const { source } = await generateImageAsync(
                 {
                   projectRoot: config.modRequest.projectRoot,
                   cacheType: "react-native-dynamic-app-icon",
                 },
                 {
-                  name,
-                  src,
-                  removeTransparency,
-                  backgroundColor: removeTransparency ? "#FFF" : "transparent",
+                  name: baseName,
+                  src: path.join(props.expoExtraAppIconsPath, src),
                   resizeMode: "contain",
                   width: size,
                   height: size,
                 },
               );
-              await fs.promises.writeFile(path.join(outputPath, name), source);
+              return Buffer.from(source);
             };
 
-            const fileName = `${name}-${size}.png`;
-            const foregroundFileName = `${name}-${size}_foreground.png`;
-            const monochromeFileName = `${name}-${size}_monochrome.png`;
+            // combine background + foreground
+            if (androidBackground) {
+              const bg = await loadImage(androidBackground);
+              const fg = await loadImage(androidForeground);
 
-            await generateAndSaveImage(fileName, androidForeground, true);
-            await generateAndSaveImage(foregroundFileName, androidForeground);
-            await generateAndSaveImage(monochromeFileName, androidMonochrome);
+              const composed = await sharp(bg)
+                .composite([{ input: fg }])
+                .png()
+                .toBuffer();
+
+              await fs.promises.writeFile(path.join(outputPath, `${name}.png`), composed);
+            } else {
+              const fg = await loadImage(androidForeground);
+              await fs.promises.writeFile(path.join(outputPath, `${name}.png`), fg);
+            }
+
+            // keep separate layers for adaptive icons
+            if (androidForeground)
+              await fs.promises.writeFile(
+                path.join(outputPath, `${name}_foreground.png`),
+                await loadImage(androidForeground),
+              );
+
+            if (androidMonochrome)
+              await fs.promises.writeFile(
+                path.join(outputPath, `${name}_monochrome.png`),
+                await loadImage(androidMonochrome),
+              );
+
+            if (androidBackground)
+              await fs.promises.writeFile(
+                path.join(outputPath, `${name}_background.png`),
+                await loadImage(androidBackground),
+              );
           }
         }
       };
 
-      // fixes the problem with same size from original addIconRes without size in the filename
       const renameIconRes = async () => {
-        for (let i = 0; androidFolderNames.length > i; i += 1) {
-          for (const name of Object.keys(icons)) {
-            const size = androidSize[i];
-            const outputPath = path.join(androidResPath, androidFolderNames[i]);
+        for (let i = 0; i < androidFolderNames.length; i++) {
+          const size = androidSize[i];
+          const outputPath = path.join(androidResPath, androidFolderNames[i]);
 
-            await fs.promises.rename(
-              `${outputPath}/${name}-${size}.png`,
-              `${outputPath}/${name}.png`,
-            );
+          for (const { name } of props.icons) {
+            const base = `${name}-${size}`;
+            const renameSafe = async (from: string, to: string) => {
+              await fs.promises.rename(from, to).catch(() => null);
+            };
 
-            await fs.promises.rename(
-              `${outputPath}/${name}-${size}_foreground.png`,
-              `${outputPath}/${name}_foreground.png`,
-            );
-
-            await fs.promises.rename(
-              `${outputPath}/${name}-${size}_monochrome.png`,
-              `${outputPath}/${name}_monochrome.png`,
-            );
+            await renameSafe(`${outputPath}/${base}.png`, `${outputPath}/${name}.png`);
+            await renameSafe(`${outputPath}/${base}_foreground.png`, `${outputPath}/${name}_foreground.png`);
+            await renameSafe(`${outputPath}/${base}_monochrome.png`, `${outputPath}/${name}_monochrome.png`);
+            await renameSafe(`${outputPath}/${base}_background.png`, `${outputPath}/${name}_background.png`);
           }
         }
       };
 
       const addIconXml = async () => {
-        for (const name of Object.keys(icons)) {
+        for (const { name } of props.icons) {
           const outputPath = path.join(androidResPath, "mipmap-anydpi-v26");
           const content = `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-<background android:drawable="@color/iconBackground"/>
-<foreground android:drawable="@mipmap/${name}_foreground"/>
-<monochrome android:drawable="@mipmap/${name}_monochrome"/>
+  <background android:drawable="@mipmap/${name}_background"/>
+  <foreground android:drawable="@mipmap/${name}_foreground"/>
+  <monochrome android:drawable="@mipmap/${name}_monochrome"/>
 </adaptive-icon>`;
 
-          await fs.promises.writeFile(
-            `${outputPath}/${name}.xml`,
-            content.trim(),
-          );
+          await fs.promises.writeFile(`${outputPath}/${name}.xml`, content.trim());
         }
       };
+
       await removeIconRes();
       await addIconRes();
       await renameIconRes();
@@ -252,6 +288,7 @@ const withIconAndroidImages: ConfigPlugin<PluginSettings> = (
     },
   ]);
 };
+
 
 // for ios
 

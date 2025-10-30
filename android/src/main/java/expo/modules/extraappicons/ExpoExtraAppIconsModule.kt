@@ -1,56 +1,66 @@
 package expo.modules.extraappicons
 
-import android.app.Activity;
-import android.app.Application;
-import android.content.Context
-import android.content.pm.PackageManager;
-import android.content.Intent;
-import android.content.ComponentName;
-
+import android.content.pm.PackageManager
+import android.content.ComponentName
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import org.json.JSONArray
 
 class ExpoExtraAppIconsModule : Module() {
+
   override fun definition() = ModuleDefinition {
     Name("ExpoExtraAppIcons")
 
     Function("setAppIcon") { name: String ->
       try {
-        var newIcon:String = context.packageName + ".MainActivity" + name
-        var currentIcon:String = if(!SharedObject.icon.isEmpty()) SharedObject.icon else context.packageName + ".MainActivity"
+        val pkg = context.packageName
+        val pm = pm
 
-        SharedObject.packageName = context.packageName
-        SharedObject.pm = pm
+        val iconList = getIconsFromManifest()
+        val mainIconName = iconList.find { it.isMainIcon }?.name
+            ?: throw IllegalStateException("Main icon not found")
+        val mainAlias = "$pkg.MainActivity$mainIconName"
+        val aliases = iconList.map { iconData -> "$pkg.MainActivity${iconData.name}" }
+
+        val newAlias = if (name == "DEFAULT") mainAlias else "$pkg.MainActivity$name"
+
+        aliases.filter { it != newAlias }.forEach { alias ->
+            pm.setComponentEnabledSetting(
+                ComponentName(pkg, alias),
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+        }
 
         pm.setComponentEnabledSetting(
-          ComponentName(context.packageName, newIcon),
-          PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-          PackageManager.DONT_KILL_APP
+            ComponentName(pkg, newAlias),
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            PackageManager.DONT_KILL_APP
         )
 
-        SharedObject.classesToKill.add(currentIcon)
-        SharedObject.icon = newIcon
-
+        SharedObject.icon = newAlias
         return@Function name
       } catch (e: Exception) {
+        e.printStackTrace()
         return@Function false
       }
-
-      return@Function false
     }
 
     Function("getAppIcon") {
-      var componentClass:String = currentActivity.getComponentName().getClassName()
+      val pkg = context.packageName
+      val iconList = getIconsFromManifest()
+      val mainIconName = iconList.find { it.isMainIcon }?.name
+          ?: throw IllegalStateException("Main icon not found")
+      val mainAlias = "$pkg.MainActivity$mainIconName"
 
-      var currentIcon:String = if(!SharedObject.icon.isEmpty()) SharedObject.icon else componentClass
-
-      var currentIconName:String = currentIcon.split("MainActivity")[1]
-
-      return@Function if(currentIconName.isEmpty()) "DEFAULT" else currentIconName
+      val className = currentActivity.componentName.className
+      val currentIcon = SharedObject.icon.ifEmpty { className }
+      val suffix = currentIcon.substringAfter("MainActivity", "")
+      return@Function if (suffix.isEmpty()) mainAlias else suffix
     }
   }
 
-  private val context: Context
+  private val context
     get() = requireNotNull(appContext.reactContext) { "React Application Context is null" }
 
   private val currentActivity
@@ -59,4 +69,26 @@ class ExpoExtraAppIconsModule : Module() {
   private val pm
     get() = requireNotNull(currentActivity.packageManager)
 
+  data class IconData(val name: String, val isMainIcon: Boolean)
+
+  private fun getIconsFromManifest(): List<IconData> {
+      return try {
+          val ai = context.packageManager.getApplicationInfo(
+              context.packageName,
+              PackageManager.GET_META_DATA
+          )
+          val value = ai.metaData?.getString("expo.extra_app_icons") ?: "[]"
+          val jsonArray = JSONArray(value)
+          List(jsonArray.length()) { i ->
+              val obj = jsonArray.getJSONObject(i)
+              IconData(
+                  name = obj.optString("name", ""),
+                  isMainIcon = obj.optBoolean("isMainIcon", false)
+              )
+          }
+      } catch (e: Exception) {
+          e.printStackTrace()
+          emptyList()
+      }
+  }
 }
