@@ -1,0 +1,33 @@
+name: Sync to GitHub
+
+on:
+    push:
+        branches:
+            - main
+        tags:
+            - "*"
+
+concurrency:
+    group: sync-to-github
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+
+jobs:
+    mirror:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout main
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+              with:
+                  fetch-depth: 0
+                  fetch-tags: true
+                  persist-credentials: false
+
+            - name: Push main and tags to GitHub
+              env:
+                  GH_PAT: ${{ secrets.GH_PAT }}
+              run: |
+                  git push "https://x-access-token:${GH_PAT}@github.com/temmiland/expo-extra-app-icons.git" origin/main:refs/heads/main
+                  git push "https://x-access-token:${GH_PAT}@github.com/temmiland/expo-extra-app-icons.git" refs/tags/*:refs/tags/*
