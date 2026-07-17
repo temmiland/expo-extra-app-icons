@@ -35,9 +35,37 @@ jobs:
 
             - name: Run bun audit
               id: audit
+              env:
+                  # Accepted, triaged findings: all live exclusively in transitive
+                  # devDependencies (expo/expo-module-scripts/react-native build+test
+                  # tooling) that are never installed for consumers of this package
+                  # (npm only installs "dependencies" + "peerDependencies"). No fixed
+                  # release exists that doesn't force a conflicting major version on
+                  # a sibling dependency, or (lodash) no fixed release exists at all.
+                  # Re-review this list whenever `bun audit` gains new findings for
+                  # these packages, and drop entries once a compatible fix lands.
+                  IGNORE_ADVISORIES: >-
+                      GHSA-f886-m6hf-6m8v
+                      GHSA-mh29-5h37-fv8m
+                      GHSA-h67p-54hq-rp68
+                      GHSA-xxjr-mmjv-4gpg
+                      GHSA-r5fr-rjxr-66jc
+                      GHSA-f23m-r3pf-42rh
+                      GHSA-3ppc-4f35-3m26
+                      GHSA-7r86-cg39-jmmj
+                      GHSA-23c5-xmqv-rm74
+                      GHSA-3v7f-55p6-f55p
+                      GHSA-c2c7-rcm5-vvqj
+                      GHSA-w5hq-g745-h8pq
+                      GHSA-58qx-3vcg-4xpx
+                      GHSA-96hv-2xvq-fx4p
               run: |
                   set +e
-                  OUTPUT=$(bun audit 2>&1)
+                  IGNORE_FLAGS=()
+                  for id in $IGNORE_ADVISORIES; do
+                      IGNORE_FLAGS+=(--ignore="$id")
+                  done
+                  OUTPUT=$(bun audit "${IGNORE_FLAGS[@]}" 2>&1)
                   EXIT_CODE=$?
                   set -e
                   echo "$OUTPUT"
