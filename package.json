@@ -26,8 +26,8 @@
     "expo-module": "expo-module",
     "prepare": "expo-module prepare",
     "prepublishOnly": "expo-module prepublishOnly",
-    "publish": "npm publish --access public",
-    "publish:beta": "npm publish --access public --tag beta"
+    "release": "npm publish --access public",
+    "release:beta": "npm publish --access public --tag beta"
   },
   "dependencies": {
     "sharp": "^0.35.3"
