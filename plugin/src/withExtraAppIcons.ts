@@ -82,12 +82,46 @@ const findIconsForPlatform = (icons: Icon[], platform: Platform) => {
 const withIconAndroidManifest: ConfigPlugin<PluginSettings> = (config, props) => {
   return withAndroidManifest(config, (config) => {
     const mainApplication: any = getMainApplicationOrThrow(config.modResults);
-    const mainActivity = getMainActivityOrThrow(config.modResults);
+    const mainActivity: any = getMainActivityOrThrow(config.modResults);
 
     const iconNamePrefix = `${config.android!.package}.MainActivity`;
 
     const mainIcon = props.icons.find((icon) => icon.isMainIcon);
     if (!mainIcon) throw new Error("No main icon defined in icons array.");
+
+    type IntentFilter = {
+      action?: { $: { [key: string]: string } }[];
+      category?: { $: { [key: string]: string } }[];
+      [key: string]: any;
+    };
+
+    const isLauncherIntentFilter = (filter: IntentFilter) => {
+      const actions = (filter.action || []).map((a) => a.$?.["android:name"]);
+      const categories = (filter.category || []).map((c) => c.$?.["android:name"]);
+      return (
+        actions.includes("android.intent.action.MAIN") &&
+        categories.includes("android.intent.category.LAUNCHER")
+      );
+    };
+
+    const existingIntentFilters: IntentFilter[] = mainActivity["intent-filter"] || [
+      {
+        action: [{ $: { "android:name": "android.intent.action.MAIN" } }],
+        category: [
+          { $: { "android:name": "android.intent.category.LAUNCHER" } },
+        ],
+      },
+    ];
+
+    // Only the MAIN/LAUNCHER filter needs to move to the icon aliases (so icon
+    // switching works). Anything else (e.g. the URI scheme / deep-link filter
+    // added by Expo's own Scheme mod, or expo-share-intent's SEND filter) must
+    // stay on .MainActivity, which remains enabled+exported regardless of which
+    // alias is the active launcher icon.
+    const launcherIntentFilters = existingIntentFilters.filter(isLauncherIntentFilter);
+    const nonLauncherIntentFilters = existingIntentFilters.filter(
+      (filter) => !isLauncherIntentFilter(filter),
+    );
 
     function addIconActivityAlias(config: any[]): any[] {
       return [
@@ -102,18 +136,7 @@ const withIconAndroidManifest: ConfigPlugin<PluginSettings> = (config, props) =>
               "android:icon": `@mipmap/${icon.name}`,
               "android:targetActivity": ".MainActivity",
             },
-            "intent-filter": [
-              ...(mainActivity["intent-filter"] || [
-                {
-                  action: [
-                    { $: { "android:name": "android.intent.action.MAIN" } },
-                  ],
-                  category: [
-                    { $: { "android:name": "android.intent.category.LAUNCHER" } },
-                  ],
-                },
-              ]),
-            ],
+            "intent-filter": [...launcherIntentFilters],
           };
         }),
       ];
@@ -126,7 +149,7 @@ const withIconAndroidManifest: ConfigPlugin<PluginSettings> = (config, props) =>
       );
     }
 
-    delete mainActivity["intent-filter"];
+    mainActivity["intent-filter"] = nonLauncherIntentFilters;
     mainActivity.$["android:enabled"] = "true";
     mainActivity.$["android:exported"] = "true";
 
