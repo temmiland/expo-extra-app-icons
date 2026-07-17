@@ -1,6 +1,6 @@
 {
   "name": "@temmiland/expo-extra-app-icons",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Manage alternate app icons programmatically with Expo and React Native.",
   "author": "Temmi Pietsch <welcome@temmi.land>",
   "license": "MIT",
