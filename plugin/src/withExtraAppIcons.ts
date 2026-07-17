@@ -183,8 +183,8 @@ const withIconAndroidImages: ConfigPlugin<PluginSettings> = (config, props) => {
 
       const addIconRes = async () => {
         for (let i = 0; i < androidFolderNames.length; i++) {
-          const size = androidSize[i];
-          const outputPath = path.join(androidResPath, androidFolderNames[i]);
+          const size = androidSize[i]!;
+          const outputPath = path.join(androidResPath, androidFolderNames[i]!);
 
           for (const icon of props.icons) {
             const { name, androidForeground, androidBackground, androidMonochrome } = icon;
@@ -248,8 +248,8 @@ const withIconAndroidImages: ConfigPlugin<PluginSettings> = (config, props) => {
 
       const renameIconRes = async () => {
         for (let i = 0; i < androidFolderNames.length; i++) {
-          const size = androidSize[i];
-          const outputPath = path.join(androidResPath, androidFolderNames[i]);
+          const size = androidSize[i]!;
+          const outputPath = path.join(androidResPath, androidFolderNames[i]!);
 
           for (const { name } of props.icons) {
             const base = `${name}-${size}`;
