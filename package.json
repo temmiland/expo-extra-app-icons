@@ -44,6 +44,8 @@
     "react-native": "*"
   },
   "overrides": {
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
     "ajv": "6.15.0",
     "@xmldom/xmldom": "0.8.13",
     "@tootallnate/once": "2.0.1",
