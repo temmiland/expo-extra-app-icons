@@ -35,26 +35,9 @@ jobs:
 
             - name: Run bun audit
               id: audit
-              env:
-                  # Accepted, triaged finding: lives exclusively in a transitive
-                  # devDependency (expo/expo-module-scripts/react-native build+test
-                  # tooling) that is never installed for consumers of this package
-                  # (npm only installs "dependencies" + "peerDependencies"), and has
-                  # no fixed release we can reach:
-                  #   uuid — xcode pins ^7, the fix only exists in >=11.1.1.
-                  # Re-review this list whenever `bun audit` gains new findings for
-                  # this package, and drop the entry once a compatible fix lands.
-                  # (image-size's two entries were dropped 2026-09-23: metro no
-                  # longer depends on image-size at all as of this lockfile.)
-                  IGNORE_ADVISORIES: >-
-                      GHSA-w5hq-g745-h8pq
               run: |
                   set +e
-                  IGNORE_FLAGS=()
-                  for id in $IGNORE_ADVISORIES; do
-                      IGNORE_FLAGS+=(--ignore="$id")
-                  done
-                  OUTPUT=$(bun audit "${IGNORE_FLAGS[@]}" 2>&1)
+                  OUTPUT=$(bun audit 2>&1)
                   EXIT_CODE=$?
                   set -e
                   echo "$OUTPUT"
